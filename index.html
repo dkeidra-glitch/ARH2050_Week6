@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Volute-Krater — Annotation Study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #16130E;
+    --surface: #221D15;
+    --surface-2: #2B241A;
+    --border: #40382A;
+    --ink: #EEE3C8;
+    --muted: #9C8F73;
+    --accent: #C1502E;
+    --accent-2: #C9A227;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; height:100%; background:var(--bg); color:var(--ink);
+    font-family:'Inter', sans-serif; overflow:hidden;
+  }
+  .app{ height:100vh; display:flex; flex-direction:column; }
+
+  header{
+    flex:0 0 auto; padding:14px 22px; display:flex; align-items:baseline;
+    justify-content:space-between; border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg, var(--surface), var(--bg));
+  }
+  header .title{
+    font-family:'Fraunces', serif; font-style:italic; font-weight:500;
+    font-size:21px; letter-spacing:0.2px;
+  }
+  header .title span{ color:var(--accent); font-style:normal; }
+  header .meta{ font-size:12.5px; color:var(--muted); }
+
+  main{ position:relative; flex:1 1 auto; overflow:hidden; }
+
+  #viewport{
+    position:absolute; inset:0; overflow:hidden; touch-action:none;
+    background:
+      radial-gradient(ellipse at 50% 30%, #221c14 0%, #16130E 70%);
+    cursor:grab;
+  }
+  #viewport.tool-note{ cursor:crosshair; }
+  #viewport.tool-draw{ cursor:crosshair; }
+  #viewport.panning{ cursor:grabbing; }
+
+  #canvas{
+    position:absolute; top:0; left:0; transform-origin:0 0; will-change:transform;
+  }
+  #canvas img{ display:block; user-select:none; -webkit-user-drag:none; pointer-events:none; }
+
+  svg.overlay{ position:absolute; top:0; left:0; pointer-events:none; overflow:visible; }
+  svg.overlay path.stroke-hit{ pointer-events:stroke; cursor:pointer; }
+  svg.overlay .handle{ pointer-events:all; cursor:pointer; }
+
+  /* Sticky notes */
+  .anno{ position:absolute; top:0; left:0; }
+  .note{
+    min-width:120px; max-width:190px; padding:10px 22px 12px 12px;
+    border-radius:2px 10px 2px 10px; box-shadow:0 6px 14px rgba(0,0,0,.45);
+    font-family:'Inter', sans-serif; font-size:13px; line-height:1.35;
+    color:#241C10; transform-origin:0 0; cursor:grab;
+  }
+  .note textarea{
+    background:transparent; border:none; resize:none; width:100%; min-height:36px;
+    font:inherit; color:inherit; outline:none; padding:0;
+  }
+  .anno .pin{
+    position:absolute; left:-4px; top:-4px; width:8px; height:8px; border-radius:50%;
+    background:var(--ink); border:2px solid var(--bg); box-shadow:0 0 0 1px rgba(0,0,0,.3);
+  }
+  .anno .close{
+    position:absolute; top:-8px; right:-8px; width:20px; height:20px; border-radius:50%;
+    background:var(--bg); border:1px solid var(--border); color:var(--ink);
+    font-size:12px; line-height:1; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; opacity:0; transition:opacity .12s ease;
+  }
+  .anno:hover .close, .anno.selected .close{ opacity:1; }
+  .anno.selected .note{ outline:2px solid var(--accent-2); outline-offset:2px; }
+
+  /* Toolbar */
+  #toolbar{
+    position:absolute; left:18px; top:50%; transform:translateY(-50%);
+    background:rgba(34,29,21,.92); border:1px solid var(--border); border-radius:14px;
+    padding:8px; display:flex; flex-direction:column; gap:4px; backdrop-filter:blur(6px);
+    box-shadow:0 10px 30px rgba(0,0,0,.4);
+  }
+  .tbtn{
+    width:42px; height:42px; border-radius:9px; border:1px solid transparent;
+    background:transparent; color:var(--muted); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition:background .12s ease, color .12s ease;
+  }
+  .tbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .tbtn:disabled{ opacity:0.35; cursor:default; }
+  .tbtn:disabled:hover{ background:transparent; }
+  .tbtn.active{ background:rgba(193,80,46,.18); color:var(--accent); border-color:rgba(193,80,46,.4); }
+  .tbtn svg{ width:20px; height:20px; }
+  .tsep{ height:1px; background:var(--border); margin:4px 6px; }
+
+  #swatches{
+    position:absolute; left:70px; top:50%; transform:translateY(-50%);
+    background:rgba(34,29,21,.92); border:1px solid var(--border); border-radius:12px;
+    padding:8px; display:flex; flex-direction:column; gap:6px; backdrop-filter:blur(6px);
+    box-shadow:0 10px 30px rgba(0,0,0,.4);
+  }
+  .swatch{ width:26px; height:26px; border-radius:50%; border:2px solid transparent; cursor:pointer; box-shadow:0 0 0 1px rgba(0,0,0,.5) inset; }
+  .swatch.active{ border-color:var(--ink); }
+
+  /* Zoom controls */
+  #zoomctl{
+    position:absolute; right:18px; bottom:18px; display:flex; align-items:center; gap:2px;
+    background:rgba(34,29,21,.92); border:1px solid var(--border); border-radius:12px;
+    padding:4px; backdrop-filter:blur(6px); box-shadow:0 10px 30px rgba(0,0,0,.4);
+  }
+  #zoomctl button{
+    width:34px; height:34px; border-radius:8px; border:none; background:transparent;
+    color:var(--ink); font-size:16px; cursor:pointer;
+  }
+  #zoomctl button:hover{ background:var(--surface-2); }
+  #zoomctl .pct{ font-size:12px; color:var(--muted); width:48px; text-align:center; }
+
+  #hint{
+    position:absolute; left:50%; top:16px; transform:translateX(-50%);
+    font-size:12.5px; color:var(--muted); background:rgba(22,19,14,.75);
+    padding:6px 14px; border-radius:20px; border:1px solid var(--border);
+    pointer-events:none; transition:opacity .3s ease;
+  }
+
+  @media (max-width: 720px){
+    #toolbar{ left:50%; top:auto; bottom:18px; transform:translateX(-50%);
+      flex-direction:row; }
+    #swatches{ left:50%; top:auto; bottom:72px; transform:translateX(-50%); flex-direction:row; }
+    #zoomctl{ right:12px; bottom:78px; }
+    header .meta{ display:none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="title">Volute-Krater <span>·</span> Amazonomachy</div>
+    <div class="meta">Painter of the Woolly Satyrs — Attic, ca. 450 BCE — The Met, 07.286.84</div>
+  </header>
+
+  <main>
+    <div id="viewport">
+      <div id="canvas">
+        <img id="artwork" src="https://collectionapi.metmuseum.org/api/collection/v1/iiif/247964/533049/main-image" alt="Terracotta volute-krater attributed to the Painter of the Woolly Satyrs, Greek Attic, ca. 450 BCE, showing an Amazonomachy" referrerpolicy="no-referrer">
+        <svg class="overlay" id="svgOverlay"></svg>
+      </div>
+    </div>
+
+    <div id="hint">Click the vase to drop a note, or draw freehand to mark it up. Drag to pan, scroll to zoom.</div>
+
+    <div id="loadError" style="display:none; position:absolute; inset:0; align-items:center; justify-content:center; flex-direction:column; gap:14px; text-align:center; padding:20px;">
+      <div style="max-width:420px; font-size:14px; color:var(--muted); line-height:1.5;">
+        The Met's server didn't return the image to this page (museum CDNs often block hotlinking from sandboxed origins like this one). Download the photo from
+        <a href="https://www.metmuseum.org/art/collection/search/247964" target="_blank" rel="noopener" style="color:var(--accent-2);">the object page</a>
+        and load it here instead — everything else in the tool works the same.
+      </div>
+      <label for="localImgInput" style="cursor:pointer; padding:10px 18px; border-radius:8px; background:var(--accent); color:#1A1208; font-size:13px; font-weight:600;">
+        Choose image file
+      </label>
+      <input type="file" id="localImgInput" accept="image/*" style="display:none;">
+    </div>
+
+    <div id="toolbar">
+      <button class="tbtn active" data-tool="pan" title="Pan and select">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12V6a1.5 1.5 0 0 1 3 0v5"/><path d="M11 11V4.5a1.5 1.5 0 0 1 3 0V11"/><path d="M14 11.2V6a1.5 1.5 0 0 1 3 0v7"/><path d="M17 11.5a1.5 1.5 0 0 1 3 0V15c0 4-2.5 7-6.5 7h-1c-3 0-4.2-1-5.7-3l-3-4.7c-.6-1 0-2.3 1.5-2.3.6 0 1.2.3 1.6.9L8 14"/></svg>
+      </button>
+      <button class="tbtn" data-tool="note" title="Add sticky note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M16 4v3h3"/><path d="M8.5 10.5h7M8.5 14h5"/></svg>
+      </button>
+      <button class="tbtn" data-tool="draw" title="Freehand draw">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20c2-6 3-11 6-14 1.6-1.6 3 0 1.7 1.9C10 10.5 7 13 4 14c3-.4 6.6.2 8.5 2 1.6 1.5 3 1 3.8-.7 1-2.3 2.2-6.3 4.2-8.3"/></svg>
+      </button>
+      <div class="tsep"></div>
+      <button class="tbtn" id="btnUndo" title="Undo last change">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7 4 12l5 5"/><path d="M4 12h11a5 5 0 0 1 0 10h-1"/></svg>
+      </button>
+      <button class="tbtn" id="btnReset" title="Reset (clear annotations and view)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
+      </button>
+      <div class="tsep"></div>
+      <button class="tbtn" id="btnExport" title="Export annotations as JSON">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+      </button>
+      <button class="tbtn" id="btnClear" title="Clear all annotations">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4.8c0-.4.4-.8.9-.8h4.2c.5 0 .9.4.9.8V7"/><path d="M6 7l1 12.2c0 1 .8 1.8 1.8 1.8h6.4c1 0 1.8-.8 1.8-1.8L18 7"/></svg>
+      </button>
+    </div>
+
+    <div id="swatches" style="display:none;"></div>
+
+    <div id="zoomctl">
+      <button id="zoomOut">−</button>
+      <div class="pct" id="zoomPct">100%</div>
+      <button id="zoomIn">+</button>
+      <button id="zoomReset" title="Reset view">⤢</button>
+    </div>
+  </main>
+</div>
+
+<script>
+(function(){
+  const viewport = document.getElementById('viewport');
+  const canvas = document.getElementById('canvas');
+  const img = document.getElementById('artwork');
+  const svg = document.getElementById('svgOverlay');
+  const hint = document.getElementById('hint');
+  const toolbar = document.getElementById('toolbar');
+  const swatchesEl = document.getElementById('swatches');
+  const zoomPct = document.getElementById('zoomPct');
+
+  // Four high-contrast colors chosen to stand out against the vase's terracotta/black glaze.
+  const COLORS = {
+    note: ['#D8A17E', '#B98A5E', '#9DAE86', '#8CA0AC'],
+    draw: ['#FFFFFF', '#00E5FF', '#FF3EA5', '#C6FF00']
+  };
+
+  let scale = 1, panX = 0, panY = 0;
+  const MIN_SCALE = 0.2, MAX_SCALE = 8;
+  let tool = 'pan';
+  let activeColor = { note: COLORS.note[0], draw: COLORS.draw[0] };
+  const DRAW_WIDTH = 4;
+
+  let annotations = []; // {id, type:'note', x,y, text, color} | {id, type:'draw', color, points:[{x,y}]}
+  let idCounter = 1;
+  let selectedId = null;
+  let history = [];
+  const HISTORY_LIMIT = 50;
+
+  function pushHistory(){
+    history.push(JSON.parse(JSON.stringify(annotations)));
+    if (history.length > HISTORY_LIMIT) history.shift();
+    syncButtons();
+  }
+  function undo(){
+    if (!history.length) return;
+    annotations = history.pop();
+    selectedId = null;
+    renderAll();
+    syncButtons();
+  }
+  function syncButtons(){
+    const undoBtn = document.getElementById('btnUndo');
+    const resetBtn = document.getElementById('btnReset');
+    const clearBtn = document.getElementById('btnClear');
+    if (undoBtn) undoBtn.disabled = history.length === 0;
+    if (resetBtn) resetBtn.disabled = annotations.length === 0;
+    if (clearBtn) clearBtn.disabled = annotations.length === 0;
+  }
+
+  // ---------- image load & initial fit ----------
+  function fitToViewport(){
+    const vw = viewport.clientWidth, vh = viewport.clientHeight;
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    canvas.style.width = iw + 'px';
+    canvas.style.height = ih + 'px';
+    resizeSvg();
+    const s = Math.min((vw*0.88)/iw, (vh*0.82)/ih, 1.4);
+    scale = s;
+    panX = (vw - iw*s)/2;
+    panY = (vh - ih*s)/2;
+    applyTransform();
+  }
+  const loadError = document.getElementById('loadError');
+  const localImgInput = document.getElementById('localImgInput');
+
+  img.addEventListener('load', () => {
+    loadError.style.display = 'none';
+    fitToViewport();
+  });
+  img.addEventListener('error', () => {
+    loadError.style.display = 'flex';
+  });
+  if (img.complete && img.naturalWidth) fitToViewport();
+  else if (img.complete) loadError.style.display = 'flex'; // completed but failed (cached error)
+
+  localImgInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { img.src = ev.target.result; };
+    reader.readAsDataURL(file);
+  });
+
+  window.addEventListener('resize', () => { resizeSvg(); });
+
+  function resizeSvg(){
+    svg.setAttribute('width', canvas.style.width);
+    svg.setAttribute('height', canvas.style.height);
+    svg.setAttribute('viewBox', `0 0 ${img.naturalWidth} ${img.naturalHeight}`);
+  }
+
+  function applyTransform(){
+    canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+    zoomPct.textContent = Math.round(scale*100) + '%';
+    renderAll();
+  }
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+  function clientToCanvas(clientX, clientY){
+    const r = viewport.getBoundingClientRect();
+    return { x: (clientX - r.left - panX) / scale, y: (clientY - r.top - panY) / scale };
+  }
+
+  function zoomAt(clientX, clientY, factor){
+    const r = viewport.getBoundingClientRect();
+    const px = clientX - r.left, py = clientY - r.top;
+    const newScale = clamp(scale * factor, MIN_SCALE, MAX_SCALE);
+    panX = px - (px - panX) * (newScale/scale);
+    panY = py - (py - panY) * (newScale/scale);
+    scale = newScale;
+    applyTransform();
+  }
+
+  // ---------- toolbar ----------
+  toolbar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tbtn[data-tool]');
+    if (!btn) return;
+    tool = btn.dataset.tool;
+    [...toolbar.querySelectorAll('.tbtn[data-tool]')].forEach(b => b.classList.toggle('active', b===btn));
+    viewport.className = tool === 'pan' ? '' : 'tool-' + tool;
+    updateSwatches();
+    deselect();
+  });
+
+  function updateSwatches(){
+    if (!COLORS[tool]) { swatchesEl.style.display = 'none'; return; }
+    swatchesEl.style.display = 'flex';
+    swatchesEl.innerHTML = '';
+    COLORS[tool].forEach(c => {
+      const s = document.createElement('div');
+      s.className = 'swatch' + (activeColor[tool]===c ? ' active' : '');
+      s.style.background = c;
+      s.addEventListener('click', () => { activeColor[tool] = c; updateSwatches(); });
+      swatchesEl.appendChild(s);
+    });
+  }
+
+  document.getElementById('btnClear').addEventListener('click', () => {
+    if (annotations.length && confirm('Remove all notes and drawings?')) {
+      pushHistory();
+      annotations = []; selectedId = null; renderAll();
+      syncButtons();
+    }
+  });
+
+  document.getElementById('btnUndo').addEventListener('click', undo);
+
+  document.getElementById('btnReset').addEventListener('click', () => {
+    if (annotations.length && !confirm('Reset the view and remove all notes and drawings?')) return;
+    history = [];
+    annotations = [];
+    selectedId = null;
+    fitToViewport();
+    syncButtons();
+  });
+  document.getElementById('btnExport').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(annotations, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'vase-annotations.json';
+    a.click();
+  });
+
+  document.getElementById('zoomIn').addEventListener('click', () => {
+    const r = viewport.getBoundingClientRect();
+    zoomAt(r.left + r.width/2, r.top + r.height/2, 1.25);
+  });
+  document.getElementById('zoomOut').addEventListener('click', () => {
+    const r = viewport.getBoundingClientRect();
+    zoomAt(r.left + r.width/2, r.top + r.height/2, 0.8);
+  });
+  document.getElementById('zoomReset').addEventListener('click', fitToViewport);
+
+  viewport.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 0.89);
+  }, { passive:false });
+
+  // ---------- pointer interaction ----------
+  const pointers = new Map();
+  let mode = null; // 'pan' | 'pinch' | 'freehand' | 'drag-anno'
+  let dragStart = null, panStart = null;
+  let pinchStart = null;
+  let currentStroke = null; // annotation object while actively drawing
+  let draggingAnno = null;
+
+  viewport.addEventListener('pointerdown', (e) => {
+    viewport.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+
+    if (pointers.size === 2) {
+      const pts = [...pointers.values()];
+      pinchStart = {
+        dist: Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y),
+        cx: (pts[0].x+pts[1].x)/2, cy: (pts[0].y+pts[1].y)/2
+      };
+      mode = 'pinch';
+      return;
+    }
+
+    if (e.target.closest('.anno')) return; // handled by anno's own listener
+    if (e.target.closest('.handle')) return;
+
+    const pt = clientToCanvas(e.clientX, e.clientY);
+
+    if (tool === 'note') {
+      addNote(pt.x, pt.y);
+    } else if (tool === 'draw') {
+      pushHistory();
+      mode = 'freehand';
+      currentStroke = { id: idCounter++, type:'draw', color:activeColor.draw, points:[{x:pt.x, y:pt.y}] };
+      annotations.push(currentStroke);
+      renderStrokes();
+    } else {
+      mode = 'pan';
+      viewport.classList.add('panning');
+      dragStart = {x:e.clientX, y:e.clientY};
+      panStart = {x:panX, y:panY};
+      deselect();
+    }
+  });
+
+  viewport.addEventListener('pointermove', (e) => {
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+
+    if (mode === 'pinch' && pointers.size === 2) {
+      const pts = [...pointers.values()];
+      const dist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+      const cx = (pts[0].x+pts[1].x)/2, cy = (pts[0].y+pts[1].y)/2;
+      const factor = dist / pinchStart.dist;
+      zoomAt(cx, cy, factor);
+      pinchStart.dist = dist;
+      return;
+    }
+    if (mode === 'pan') {
+      panX = panStart.x + (e.clientX - dragStart.x);
+      panY = panStart.y + (e.clientY - dragStart.y);
+      applyTransform();
+    } else if (mode === 'freehand' && currentStroke) {
+      const pt = clientToCanvas(e.clientX, e.clientY);
+      const last = currentStroke.points[currentStroke.points.length-1];
+      if (Math.hypot(pt.x-last.x, pt.y-last.y) > 1.2/scale) {
+        currentStroke.points.push({x:pt.x, y:pt.y});
+        updateStrokePath(currentStroke.id);
+      }
+    } else if (mode === 'drag-anno' && draggingAnno) {
+      const pt = clientToCanvas(e.clientX, e.clientY);
+      const a = annotations.find(a => a.id === draggingAnno.id);
+      if (a) {
+        a.x = pt.x - draggingAnno.offX;
+        a.y = pt.y - draggingAnno.offY;
+        renderAll();
+      }
+    }
+  });
+
+  function endInteraction(e){
+    pointers.delete(e.pointerId);
+    if (mode === 'pinch' && pointers.size < 2) {
+      const remaining = [...pointers.values()][0];
+      if (remaining) { mode = 'pan'; dragStart = remaining; panStart = {x:panX,y:panY}; }
+      else mode = null;
+      return;
+    }
+    if (mode === 'freehand' && currentStroke) {
+      currentStroke = null;
+      renderStrokes();
+      syncButtons();
+    }
+    if (mode === 'pan') viewport.classList.remove('panning');
+    mode = null;
+    draggingAnno = null;
+  }
+  viewport.addEventListener('pointerup', endInteraction);
+  viewport.addEventListener('pointercancel', endInteraction);
+
+  document.addEventListener('keydown', (e) => {
+    const tag = document.activeElement.tagName;
+    const editing = tag === 'TEXTAREA' || document.activeElement.isContentEditable;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId != null && !editing) {
+      removeAnnotation(selectedId);
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !editing) {
+      e.preventDefault();
+      undo();
+    }
+  });
+
+  // ---------- annotation creation ----------
+  function addNote(x, y){
+    pushHistory();
+    const a = { id:idCounter++, type:'note', x, y, text:'', color:activeColor.note };
+    annotations.push(a);
+    renderAll();
+    syncButtons();
+    setTimeout(() => {
+      const el = document.querySelector(`[data-id="${a.id}"] textarea`);
+      if (el) el.focus();
+    }, 0);
+  }
+
+  function removeAnnotation(id){
+    pushHistory();
+    annotations = annotations.filter(a => a.id !== id);
+    if (selectedId === id) selectedId = null;
+    renderAll();
+    syncButtons();
+  }
+  function selectAnno(id){ selectedId = id; renderAll(); }
+  function deselect(){ if (selectedId != null) { selectedId = null; renderAll(); } }
+
+  // ---------- rendering ----------
+  function renderAll(){
+    hint.style.opacity = annotations.length ? '0' : '1';
+    // clear existing anno DOM nodes
+    canvas.querySelectorAll('.anno').forEach(n => n.remove());
+    const inv = 1/scale;
+
+    annotations.forEach(a => {
+      if (a.type === 'draw') return; // drawn in SVG below
+      const wrap = document.createElement('div');
+      wrap.className = 'anno' + (selectedId===a.id ? ' selected' : '');
+      wrap.dataset.id = a.id;
+      wrap.style.left = a.x + 'px';
+      wrap.style.top = a.y + 'px';
+
+      const pin = document.createElement('div');
+      pin.className = 'pin';
+      wrap.appendChild(pin);
+
+      const close = document.createElement('div');
+      close.className = 'close';
+      close.textContent = '×';
+      close.addEventListener('pointerdown', (e) => e.stopPropagation());
+      close.addEventListener('click', (e) => { e.stopPropagation(); removeAnnotation(a.id); });
+      wrap.appendChild(close);
+
+      const inner = document.createElement('div');
+      inner.className = 'note';
+      inner.style.background = a.color;
+      inner.style.transform = `translate(6px, 6px) rotate(-1.5deg) scale(${inv})`;
+      const ta = document.createElement('textarea');
+      ta.value = a.text;
+      ta.placeholder = 'Add a note…';
+      ta.rows = 3;
+      ta.addEventListener('pointerdown', (e) => e.stopPropagation());
+      ta.addEventListener('input', () => { a.text = ta.value; });
+      inner.appendChild(ta);
+      wrap.appendChild(inner);
+
+      wrap.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        if (e.target.tagName === 'TEXTAREA') { selectAnno(a.id); return; }
+        selectAnno(a.id);
+        pushHistory();
+        viewport.setPointerCapture(e.pointerId);
+        const pt = clientToCanvas(e.clientX, e.clientY);
+        draggingAnno = { id:a.id, offX: pt.x - a.x, offY: pt.y - a.y };
+        mode = 'drag-anno';
+      });
+
+      canvas.appendChild(wrap);
+    });
+
+    renderStrokes();
+  }
+
+  function pathData(points){
+    if (points.length === 1) return '';
+    return 'M ' + points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
+  }
+
+  function renderStrokes(){
+    svg.innerHTML = '';
+    annotations.filter(a => a.type==='draw').forEach(a => {
+      const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('data-id', a.id);
+
+      if (a.points.length === 1) {
+        const dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
+        dot.setAttribute('cx', a.points[0].x);
+        dot.setAttribute('cy', a.points[0].y);
+        dot.setAttribute('r', (DRAW_WIDTH/2)/scale + 2/scale);
+        dot.setAttribute('fill', a.color);
+        dot.style.pointerEvents = 'all';
+        dot.style.cursor = 'pointer';
+        dot.addEventListener('pointerdown', (e) => { e.stopPropagation(); selectAnno(a.id); });
+        g.appendChild(dot);
+      } else {
+        const d = pathData(a.points);
+        const hit = document.createElementNS('http://www.w3.org/2000/svg','path');
+        hit.setAttribute('d', d);
+        hit.setAttribute('class','stroke-hit');
+        hit.setAttribute('fill','none');
+        hit.setAttribute('stroke','transparent');
+        hit.setAttribute('stroke-width', 16/scale);
+        hit.setAttribute('stroke-linecap','round');
+        hit.setAttribute('stroke-linejoin','round');
+        hit.addEventListener('pointerdown', (e) => { e.stopPropagation(); selectAnno(a.id); });
+        g.appendChild(hit);
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+        path.setAttribute('data-path', a.id);
+        path.setAttribute('d', d);
+        path.setAttribute('fill','none');
+        path.setAttribute('stroke', a.color);
+        path.setAttribute('stroke-width', selectedId===a.id ? DRAW_WIDTH+2 : DRAW_WIDTH);
+        path.setAttribute('stroke-linecap','round');
+        path.setAttribute('stroke-linejoin','round');
+        path.setAttribute('vector-effect','non-scaling-stroke');
+        path.style.pointerEvents = 'none';
+        if (selectedId===a.id) path.setAttribute('opacity','1'); 
+        g.appendChild(path);
+      }
+
+      if (selectedId === a.id) {
+        const first = a.points[0];
+        const del = document.createElementNS('http://www.w3.org/2000/svg','g');
+        del.setAttribute('class','handle');
+        del.setAttribute('transform', `translate(${first.x},${first.y}) scale(${1/scale})`);
+        del.innerHTML = `<circle r="9" fill="#16130E" stroke="#40382A"></circle><text x="0" y="4" text-anchor="middle" font-size="13" fill="#EEE3C8" font-family="Inter, sans-serif">×</text>`;
+        del.addEventListener('pointerdown', (e) => { e.stopPropagation(); removeAnnotation(a.id); });
+        g.appendChild(del);
+      }
+
+      svg.appendChild(g);
+    });
+  }
+
+  function updateStrokePath(id){
+    // lightweight update while actively drawing: avoid full re-render for smooth strokes
+    const a = annotations.find(a => a.id === id);
+    if (!a) return;
+    let g = svg.querySelector(`g[data-id="${id}"]`);
+    if (!g || a.points.length === 2) { renderStrokes(); return; } // first segment needs full build (dot -> path swap)
+    const path = g.querySelector('path[data-path]');
+    const hit = g.querySelector('path.stroke-hit');
+    const d = pathData(a.points);
+    if (path) path.setAttribute('d', d);
+    if (hit) hit.setAttribute('d', d);
+  }
+
+  updateSwatches();
+  syncButtons();
+})();
+</script>
+</body>
+</html>
